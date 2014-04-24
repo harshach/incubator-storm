@@ -142,8 +142,12 @@
       (trim (slurp release-path))
       "Unknown")))
 
-(defn cluster-summary-table [^ClusterSummary summ]
-  (let [sups (.get_supervisors summ)
+(defn cluster-summary
+  ([]
+     (with-nimbus nimbus
+        (cluster-summary (.getClusterInfo ^Nimbus$Client nimbus))))
+  ([^ClusterSummary summ]
+     (let [sups (.get_supervisors summ)
         used-slots (reduce + (map #(.get_num_used_workers ^SupervisorSummary %) sups))
         total-slots (reduce + (map #(.get_num_workers ^SupervisorSummary %) sups))
         free-slots (- total-slots used-slots)
@@ -153,6 +157,18 @@
         total-executors (->> (.get_topologies summ)
                              (map #(.get_num_executors ^TopologySummary %))
                              (reduce +))]
+       { "storm.version" (read-storm-version)
+         "nimbus.uptime" (pretty-uptime-sec (.get_nimbus_uptime_secs summ))
+         "supervisors" (count sups)
+         "topologies" ""
+         "slots.total" total-slots
+         "slots.used"  used-slots
+         "slots.free" free-slots
+         "executors.total" total-executors
+         "tasks.total" total-tasks })))
+
+(defn cluster-summary-table [^ClusterSummary summ]
+  (let [cluster-summary-map (cluster-summary summ)]
     (table [{:text "Version" :attr {:class "tip right"
                                     :title (:version tips)}}
             {:text "Nimbus uptime" :attr {:class "tip right"
@@ -169,14 +185,14 @@
                                        :title (:num-execs tips)}}
             {:text "Tasks" :attr {:class "tip left"
                                   :title (:num-tasks tips)}}]
-           [[(read-storm-version)
-             (pretty-uptime-sec (.get_nimbus_uptime_secs summ))
-             (count sups)
-             used-slots
-             free-slots
-             total-slots
-             total-executors
-             total-tasks]])
+           [[(cluster-summary-map "storm.version")
+             (cluster-summary-map "nimbus.uptime")
+             (cluster-summary-map "supervisors")
+             (cluster-summary-map "slots.used")
+             (cluster-summary-map "slots.free")
+             (cluster-summary-map "slots.total")
+             (cluster-summary-map "executors.total")
+             (cluster-summary-map "tasks.total")]])
     ))
 
 (defn topology-link
@@ -184,54 +200,85 @@
   ([id content]
      (link-to (url-format "/topology/%s" id) (escape-html content))))
 
+(defn topology-summary
+  ([]
+     (with-nimbus nimbus
+       (topology-summary (.get_topologies (.getClusterInfo ^Nimbus$Client nimbus)))))
+  ([summs]
+     (for [^TopologySummary t summs]
+        {"id" (.get_id t)
+         "name" (.get_name t)
+         "status" (.get_status t)
+         "uptime" (.get_uptime_secs t)
+         "tasks.total" (.get_num_tasks t)
+         "workers.total" (.get_num_workers t)
+         "executors.total" (.get_num_executors t)})))
+
+(defn supervisor-summary
+  ([]
+     (with-nimbus nimbus
+       (supervisor-summary (.get_supervisors (.getClusterInfo ^Nimbus$Client nimbus)))
+       ))
+  ([summs]
+     (for [^SupervisorSummary s summs]
+            {"id" (.get_supervisor_id s)
+             "host" (.get_host s)
+             "uptime" (pretty-uptime-sec (.get_uptime_secs s))
+             "slots.total" (.get_num_workers s)
+             "slots.used" (.get_num_used_workers s)})))
+
 (defn main-topology-summary-table [summs]
-  (sorted-table
-   [{:text "Name" :attr {:class "tip right"
+  (let [topology-summary-vec (topology-summary summs)]
+    (sorted-table
+     [{:text "Name" :attr {:class "tip right"
                          :title (str (:name tips) " " (:name-link tips))}}
-    {:text "Id" :attr {:class "tip right"
+      {:text "Id" :attr {:class "tip right"
                        :title (:topo-id tips)}}
-    {:text "Status" :attr {:class "tip above"
+      {:text "Status" :attr {:class "tip above"
                            :title (:status tips)}}
-    {:text "Uptime" :attr {:class "tip above"
+      {:text "Uptime" :attr {:class "tip above"
                            :title (:topo-uptime tips)}}
-    {:text "Num workers" :attr {:class "tip above"
+      {:text "Num workers" :attr {:class "tip above"
                                 :title (:num-workers tips)}}
-    {:text "Num executors" :attr {:class "tip above"
+      {:text "Num executors" :attr {:class "tip above"
                                   :title (:num-execs tips)}}
-    {:text "Num tasks" :attr {:class "tip above"
+      {:text "Num tasks" :attr {:class "tip above"
                               :title (:num-tasks tips)}}]
-   (for [^TopologySummary t summs]
-     [(topology-link (.get_id t) (.get_name t))
-      (escape-html (.get_id t))
-      (.get_status t)
-      (pretty-uptime-sec (.get_uptime_secs t))
-      (.get_num_workers t)
-      (.get_num_executors t)
-      (.get_num_tasks t)
-      ])
+     (for [t topology-summary-vec]
+       [(topology-link (t "id") (t "name"))
+        (escape-html (t "id"))
+        (t "status")
+        (pretty-uptime-sec (t "uptime"))
+        (t "workers.total")
+        (t "executors.total")
+        (t "tasks.total")
+        ])
    :time-cols [3]
    :sort-list "[[0,0]]"
-   ))
+   )))
+
 
 (defn supervisor-summary-table [summs]
-  (sorted-table
-   [{:text "Id" :attr {:class "tip right"
+  (let [supervisor-summary-vec (supervisor-summary summs)]
+    (sorted-table
+     [{:text "Id" :attr {:class "tip right"
                        :title (:sup-id tips)}}
-    {:text "Host" :attr {:class "tip above"
+      {:text "Host" :attr {:class "tip above"
                          :title (:sup-host tips)}}
-    {:text "Uptime" :attr {:class "tip above"
+      {:text "Uptime" :attr {:class "tip above"
                          :title (:sup-uptime tips)}}
-    {:text "Slots" :attr {:class "tip above"
+      {:text "Slots" :attr {:class "tip above"
                           :title (:num-slots tips)}}
-    {:text "Used slots" :attr {:class "tip left"
+      {:text "Used slots" :attr {:class "tip left"
                                :title (:num-slots tips)}}]
-   (for [^SupervisorSummary s summs]
-     [(.get_supervisor_id s)
-      (.get_host s)
-      (pretty-uptime-sec (.get_uptime_secs s))
-      (.get_num_workers s)
-      (.get_num_used_workers s)])
-   :time-cols [2]))
+     (for [s supervisor-summary-vec]
+       [(s "id")
+        (s "host")
+        (s "uptime")
+        (s "slots.total")
+        (s "slots.used")])
+     :time-cols [2])
+    ))
 
 (defn configuration-table [conf]
   (sorted-table ["Key" "Value"]
@@ -644,8 +691,8 @@
   [:input {:type "button"
            :value action
            (if enabled :enabled :disabled) ""
-           :onclick (str "confirmAction('" 
-                         (StringEscapeUtils/escapeJavaScript id) "', '" 
+           :onclick (str "confirmAction('"
+                         (StringEscapeUtils/escapeJavaScript id) "', '"
                          (StringEscapeUtils/escapeJavaScript name) "', '"
                          command "', " is-wait ", " default-wait ")")}])
 
@@ -1006,15 +1053,286 @@
         (errors-table (get (.get_errors summ) component))]
        ))))
 
+
+(defn topology-stats [id window stats]
+  (let [times (stats-times (:emitted stats))
+        display-map (into {} (for [t times] [t pretty-uptime-sec]))
+        display-map (assoc display-map ":all-time" (fn [_] "All time"))]
+    (for [k (concat times [":all-time"])
+           :let [disp ((display-map k) k)]]
+      { "disp" disp
+        "emitted" (get-in stats [:emittd k])
+        "transferred" (get-in stats [:transferred k])
+        "complete_latency" (float-str (get-in stats [:complete-latencies k]))
+        "acked" (get-in stats [:acked k])
+        "failed" (get-in stats [:failed k])
+        }
+      )))
+
+(defn spout-comp [top-id summ-map errors window include-sys?]
+  (for [[id summs] summ-map
+        :let [stats-seq (get-filled-stats summs)
+              stats (aggregate-spout-streams
+                     (aggregate-spout-stats
+                      stats-seq include-sys?))]]
+    {"id" id
+     "executors" (count summs)
+     "tasks" (sum-tasks summs)
+     "emitted" (get-in stats [:emitted window])
+     "transferred" (get-in stats [:transferred window])
+     "complete_latency" (float-str (get-in stats [:complete-latencies window]))
+     "acked" (get-in stats [:acked window])
+     "failed" (get-in stats [:failed window])
+     "last_error" (most-recent-error (get errors id))
+     }))
+
+(defn bolt-comp [top-id summ-map errors window include-sys?]
+  (for [[id summs] summ-map
+        :let [stats-seq (get-filled-stats summs)
+              stats (aggregate-bolt-streams
+                     (aggregate-bolt-stats
+                      stats-seq include-sys?))
+              ]]
+    {"id" id
+     "executors" (count summs)
+     "tasks" (sum-tasks summs)
+     "emitted" (get-in stats [:emitted window])
+     "trasnferred" (get-in stats [:transferred window])
+     "capacity" (compute-bolt-capacity summs)
+     "execute_latency" (float-str (get-in stats [:execute-latencies window]))
+     "executed" (get-in stats [:executed window])
+     "process_latency" (float-str (get-in stats [:process-latencies window]))
+     "acked" (get-in stats [:acked window])
+     "failed" (get-in stats [:failed window])
+     "last_error" (most-recent-error (get errors id))
+     }
+    ))
+
+(defn topology-id-summary [^TopologyInfo summ]
+  (let [executors (.get_executors summ)
+        workers (set (for [^ExecutorSummary e executors] [(.get_host e) (.get_port e)]))]
+      {"id" (.get_id summ)
+       "name" (.get_name summ)
+       "status" (.get_status summ)
+       "uptime" (pretty-uptime-sec (.get_uptime_secs summ))
+       "tasks.total" (sum-tasks executors)
+       "workers.total" (count workers)
+       "executors.total" (count executors)}
+      ))
+
+(defn topology-page-summary-json [id window include-sys?]
+  (with-nimbus nimbus
+    (let [window (if window window ":all-time")
+          window-hint (window-hint window)
+          summ (.getTopologyInfo ^Nimbus$Client nimbus id)
+          topology (.getTopology ^Nimbus$Client nimbus id)
+          topology-conf (from-json (.getTopologyConf ^Nimbus$Client nimbus id))
+          spout-summs (filter (partial spout-summary? topology) (.get_executors summ))
+          bolt-summs (filter (partial bolt-summary? topology) (.get_executors summ))
+          spout-comp-summs (group-by-comp spout-summs)
+          bolt-comp-summs (group-by-comp bolt-summs)
+          bolt-comp-summs (filter-key (mk-include-sys-fn include-sys?) bolt-comp-summs)
+          name (.get_name summ)
+          status (.get_status summ)
+          msg-timeout (topology-conf TOPOLOGY-MESSAGE-TIMEOUT-SECS)
+          ]
+      {"topology_summary" (topology-id-summary summ)
+       "topology_stats" (topology-stats id window (total-aggregate-stats spout-summs bolt-summs include-sys?))
+       "spouts" (spout-comp id spout-comp-summs (.get_errors summ) window include-sys?)
+       "bolts" (bolt-comp id bolt-comp-summs (.get_errors summ) window include-sys?)
+       "configuration" topology-conf
+       })
+    ))
+
+
+
+(defn cluster-configuration []
+  (with-nimbus nimbus
+    (.getNimbusConf ^Nimbus$Client nimbus)))
+
+(defn spout-summary-json [topology-id id stats window]
+  (let [times (stats-times (:emitted stats))
+        display-map (into {} (for [t times] [t pretty-uptime-sec]))
+        display-map (assoc display-map ":all-time" (fn [_] "All time"))]
+     (for [k (concat times [":all-time"])
+           :let [disp ((display-map k) k)]]
+       {"disp" disp
+        "emitted" (get-in stats [:emitted k])
+        "complete_latency" (float-str (get-in stats [:complete-latencies k]))
+        "acked" (get-in stats [:acked k])
+        "failed" (get-in stats [:failed k])
+        }
+       )))
+
+(defn spout-output-summary-json [stream-summary window]
+  (let [stream-summary (map-val swap-map-order (swap-map-order stream-summary))]
+    (for [[s stats] (stream-summary window)]
+      {"stream" s
+       "emitted" (nil-to-zero (:emitted stats))
+       "transferred" (nil-to-zero (:transferred stats))
+       "complete_latency" (float-str (:complete-latencies stats))
+       "acked" (nil-to-zero (:acked stats))
+       "failed" (nil-to-zero (:failed stats))
+       }
+      )))
+
+(defn spout-executor-json [topology-id executors window include-sys?]
+  (for [^ExecutorSummary e executors
+        :let [stats (.get_stats e)
+              stats (if stats
+                      (-> stats
+                          (aggregate-spout-stats include-sys?)
+                          aggregate-spout-streams
+                          swap-map-order
+                          (get window)))]]
+    {"id" (pretty-executor-info (.get_executor_info e))
+     "uptime" (pretty-uptime-sec (.get_uptime_secs e))
+     "host" (.get_host e)
+     "port" (.get_port e)
+     "emitted" (nil-to-zero (:emitted stats))
+     "stats" (nil-to-zero (:transferred stats))
+     "complete_latency" (float-str (:complete-latencies stats))
+     "acked" (nil-to-zero (:acked stats))
+     "failed" (nil-to-zero (:failed stats))
+     }
+  ))
+
+(defn spout-page-json [window ^TopologyInfo topology-info component executors include-sys?]
+  (let [window-hint (str " (" (window-hint window) ")")
+        stats (get-filled-stats executors)
+        stream-summary (-> stats (aggregate-spout-stats include-sys?))
+        summary (-> stream-summary aggregate-spout-streams)]
+    {"spout_summary" (spout-summary-json (.get_id topology-info) component summary window)
+     "output_stats" (spout-output-summary-json stream-summary window)
+     "executors" (spout-executor-json (.get_id topology-info) executors window include-sys?)}
+    ))
+
+
+(defn bolt-summary [topology-id id stats window]
+  (let [times (stats-times (:emitted stats))
+        display-map (into {} (for [t times] [t pretty-uptime-sec]))
+        display-map (assoc display-map ":all-time" (fn [_] "All time"))]
+    (for [k (concat times [":all-time"])
+          :let [disp ((display-map k) k)]]
+      {"disp" disp
+       "emitted" (get-in stats [:emitted k])
+       "transferred" (get-in stats [:transferred k])
+       "execute_latency" (float-str (get-in stats [:execute-latencies k]))
+       "executed" (get-in stats [:executed k])
+       "process_latency" (float-str (get-in stats [:process-latencies k]))
+       "acked" (get-in stats [:acked k])
+       "failed" (get-in stats [:failed k])})))
+
+(defn bolt-input-summary [stream-summary window]
+    (let [stream-summary (-> stream-summary
+                           swap-map-order
+                           (get window)
+                           (select-keys [:acked :failed :process-latencies :executed :execute-latencies])
+                           swap-map-order)]
+      (for [[^GlobalStreamId s stats] stream-summary]
+        {"component" (.get_componentId s)
+         "stream" (.get_streamId s)
+         "execute_latency" (float-str (:execute-latencies stats))
+         "executed" (nil-to-zero (:executed stats))
+         "process_latency" (float-str (:process-latencies stats))
+         "acked" (nil-to-zero (:acked stats))
+         "failed" (nil-to-zero (:failed stats))
+         })))
+
+(defn bolt-output-summary [stream-summary window]
+  (let [stream-summary (-> stream-summary
+                           swap-map-order
+                           (get window)
+                           (select-keys [:emitted :transferred])
+                           swap-map-order)]
+    (for [[s stats] stream-summary]
+      {"stream" s
+       "emitted" (nil-to-zero (:emitted stats))
+       "transferred" (nil-to-zero (:transferred stats))
+       })))
+
+(defn bolt-executor-summary [topology-id executors window include-sys?]
+  (for [^ExecutorSummary e executors
+         :let [stats (.get_stats e)
+               stats (if stats
+                       (-> stats
+                           (aggregate-bolt-stats include-sys?)
+                           (aggregate-bolt-streams)
+                           swap-map-order
+                           (get window)))]]
+    {"id" (pretty-executor-info (.get_executor_info e))
+     "uptime" (pretty-uptime-sec (.get_uptime_secs e))
+     "host" (.get_host e)
+     "port" (.get_port e)
+     "emitted" (nil-to-zero (:emitted stats))
+     "transferred" (nil-to-zero (:transferred stats))
+     "capacity" (compute-executor-capacity e)
+     "execute_latency" (float-str (:execute-latencies stats))
+     "executed" (nil-to-zero (:executed stats))
+     "process_latency" (float-str (:process-latencies stats))
+     "acked" (nil-to-zero (:acked stats))
+     "failed" (nil-to-zero (:failed stats))
+     }))
+
+(defn bolt-page-json [window ^TopologyInfo topology-info component executors include-sys?]
+  (let [window-hint (str " (" (window-hint window) ")")
+        stats (get-filled-stats executors)
+        stream-summary (-> stats (aggregate-bolt-stats include-sys?))
+        summary (-> stream-summary aggregate-bolt-streams)]
+    {"bolt_stats" (bolt-summary (.get_id topology-info) component summary window)
+     "input_stats" (bolt-input-summary-table stream-summary window)
+     "ouput_stas" (bolt-output-summary-table stream-summary window)
+     "executors" (bolt-executor-table (.get_id topology-info) executors window include-sys?)}
+    ))
+
+(defn component-page-json [topology-id component window include-sys?]
+  (with-nimbus nimbus
+    (let [window (if window window ":all-time")
+          summ (.getTopologyInfo ^Nimbus$Client nimbus topology-id)
+          topology (.getTopology ^Nimbus$Client nimbus topology-id)
+          type (component-type topology component)
+          summs (component-task-summs summ topology component)
+          spec (cond (= type :spout) {"spout_summary" (spout-page-json window summ component summs include-sys?)}
+                     (= type :bolt) {"bolt_summary" (bolt-page-json window summ component summs include-sys?)})]
+      (merge
+       {"component_summary"
+        {"id" component
+         "name" (.get_name summ)
+         "executors" (count summs)
+         "tasks" (sum-tasks summs)
+         }} spec))))
+
 (defn get-include-sys? [cookies]
   (let [sys? (get cookies "sys")
         sys? (if (or (nil? sys?) (= "false" (:value sys?))) false true)]
     sys?))
 
+(defn json-response [data & [status]]
+  {:status (or status 200)
+   :headers {"Content-Type" "application/json"}
+   :body (to-json data)
+   }
+  )
+
 (defroutes main-routes
   (GET "/" [:as {cookies :cookies}]
        (-> (main-page)
            ui-template))
+  (GET "/api/cluster/configuration" []
+       (cluster-configuration))
+  (GET "/api/cluster/summary" []
+       (json-response (cluster-summary)))
+  (GET "/api/supervisors/summary" []
+       (json-response (supervisor-summary)))
+  (GET "/api/topology/summary" []
+       (json-response topology-summary))
+  (GET  "/api/topology/:id" [id & m]
+        (let [id (java.net.URLDecoder/decode id)]
+          (json-response (topology-page-summary-json id (:window m) false))))
+  (GET "/api/topology/:id/component/:component" [id component & m]
+       (let [id (java.net.URLDecoder/decode id)
+             component (java.net.URLDecoder/decode component)]
+         (json-response (component-page-json id component (:window m) false))))
   (GET "/topology/:id" [:as {cookies :cookies} id & m]
        (let [include-sys? (get-include-sys? cookies)
             id (java.net.URLDecoder/decode id)]
