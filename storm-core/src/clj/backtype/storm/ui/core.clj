@@ -1325,7 +1325,7 @@
   (GET "/api/supervisors/summary" []
        (json-response (supervisor-summary)))
   (GET "/api/topology/summary" []
-       (json-response topology-summary))
+       (json-response (topology-summary)))
   (GET  "/api/topology/:id" [id & m]
         (let [id (java.net.URLDecoder/decode id)]
           (json-response (topology-page-summary-json id (:window m) false))))
