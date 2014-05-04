@@ -644,8 +644,7 @@
   {:status (or status 200)
    :headers {"Content-Type" "application/json"}
    :body (to-json data)
-   }
-  )
+   })
 
 (defroutes main-routes
   (GET "/api/cluster/configuration" []
@@ -706,19 +705,19 @@
   (route/resources "/")
   (route/not-found "Page not found"))
 
-(defn exception->html [ex]
-  ({ "error" "Internal Server Error"
+(defn exception->json [ex]
+  { "error" "Internal Server Error"
      "errorMessage" (let [sw (java.io.StringWriter.)]
       (.printStackTrace ex (java.io.PrintWriter. sw))
       (.toString sw))
-    }))
+    })
 
 (defn catch-errors [handler]
   (fn [request]
     (try
       (handler request)
       (catch Exception ex
-        (json-response (exception->html ex) 500)
+        (json-response (exception->json ex) 500)
         ))))
 
 (def app

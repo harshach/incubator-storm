@@ -29,6 +29,8 @@
 <div id="topology-configuration">
 </div>
 <p id="toggle-switch" style="display: block;" class="js-only"></p>
+<div id="error">
+</div>
 </body>
 <script>
 $(document).ready(function() {
@@ -38,6 +40,15 @@ $(document).ready(function() {
     var url = "/api/topology/"+topologyId+"?sys="+sys;
     if(window) url += "&window="+window;
     renderToggleSys($("#toggle-switch"));
+    $.ajaxSetup({
+        "error":function(jqXHR,textStatus,response) {
+            var errorJson = jQuery.parseJSON(jqXHR.responseText);
+            $.get("/templates/error-template.html", function(template) {
+                $("#error").append(Mustache.render($(template).filter("#error-template").html(),errorJson));
+            });
+        }
+    });
+
     $.getJSON(url,function(response,status,jqXHR) {
         var topologySummary = $("#topology-summary");
         var topologyStats = $("#topology-stats");

@@ -23,7 +23,9 @@
 </div>
 <div id="component-executor-stats">
 </div>
-<div id="errors">
+<div id="component-errors">
+</div>
+<div id="error">
 </div>
 <p id="toggle-switch" style="display: block;" class="js-only"></p>
 <script>
@@ -35,6 +37,14 @@ $(document).ready(function() {
     var url = "/api/topology/"+topologyId+"/component/"+componentId+"?sys="+sys;
     if(window) url += "&window="+window;
     renderToggleSys($("#toggle-switch"));
+    $.ajaxSetup({
+        "error":function(jqXHR,textStatus,response) {
+            var errorJson = jQuery.parseJSON(jqXHR.responseText);
+            $.get("/templates/error-template.html", function(template) {
+                $("#error").append(Mustache.render($(template).filter("#error-template").html(),errorJson));
+            });
+        }
+    });
 
     $.getJSON(url,function(response,status,jqXHR) {
         var componentSummary = $("#component-summary");
@@ -42,7 +52,7 @@ $(document).ready(function() {
         var inputStats = $("#component-input-stats");
         var outputStats = $("#component-output-stats");
         var executorStats = $("#component-executor-stats");
-        var errors = $("#errors");
+        var errors = $("#component-errors");
         $.get("/templates/component-page-template.html", function(template) {
             componentSummary.append(Mustache.render($(template).filter("#component-summary-template").html(),response));
             if(response["componentType"] == "spout") {
