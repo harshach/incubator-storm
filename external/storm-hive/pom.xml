@@ -34,6 +34,7 @@
             <groupId>org.apache.storm</groupId>
             <artifactId>storm-core</artifactId>
             <version>${project.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
           <groupId>org.apache.hive.hcatalog</groupId>

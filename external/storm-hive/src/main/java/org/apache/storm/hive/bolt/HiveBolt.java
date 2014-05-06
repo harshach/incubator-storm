@@ -41,24 +41,19 @@ public class HiveBolt extends  BaseRichBolt {
     private HiveWriter writer;
     private OutputCollector collector;
     private HiveEndPoint endPoint;
-    private Integer currBatchSize;
+    private Integer currentBatchSize;
 
     private static final int defaultMaxOpenConnections = 500;
     private static final int defaultTxnsPerBatch = 100;
     private static final int defaultBatchSize = 15000;
     private static final int defaultCallTimeout = 10000;
-    private static final int defaultIdleTimeout = 0;
     private static final int defautHeartBeatInterval = 240; // seconds
 
-    HashMap<HiveEndPoint, HiveWriter> allWriters;
-
-    private volatile int idleTimeout;
     protected String databaseName;
     protected String tableName;
     protected String metaStoreURI;
     protected Integer txnsPerBatch;
     protected Integer batchSize;
-    private Integer maxOpenConnections;
     protected Boolean autoCreatePartitions;
     protected List<String> partitionVals;
     protected String[] columnVals;
@@ -74,7 +69,7 @@ public class HiveBolt extends  BaseRichBolt {
         this.metaStoreURI = metaStoreURI;
         this.databaseName = databaseName;
         this.tableName = tableName;
-        this.currBatchSize = 0;
+        this.currentBatchSize = 0;
     }
 
     @Override
@@ -83,11 +78,12 @@ public class HiveBolt extends  BaseRichBolt {
             this.collector = collector;
             String timeoutName = "hive-bolt-%d";
             callTimeoutPool = Executors.newFixedThreadPool(1,
-                                                           new ThreadFactoryBuilder().setNameFormat(timeoutName).build());
+                                new ThreadFactoryBuilder().setNameFormat(timeoutName).build());
             readHiveConf(conf);
             endPoint = makeEndPoint();
             writer = new HiveWriter(endPoint,txnsPerBatch,autoCreatePartitions,callTimeout,
                                     callTimeoutPool,columnVals);
+            setupHeartBeatTimer();
         } catch(Exception e) {
             LOG.warn("unable to make connection to hive ",e);
         }
@@ -96,14 +92,19 @@ public class HiveBolt extends  BaseRichBolt {
     @Override
     public void execute(Tuple tuple) {
         if(timeToSendHeartBeat.compareAndSet(true, false)) {
-            enableHeartBeatOnAllWriters();
+            writer.setHearbeatNeeded();
         }
         try {
+            if(currentBatchSize >= batchSize) {
+                writer.flush(true);
+                currentBatchSize = 0;
+            }
             collector.ack(tuple);
             writer.write(tuple);
+            currentBatchSize++;
         } catch(Exception e) {
-            LOG.warn("hive streaming failed. ",e);
             collector.fail(tuple);
+            LOG.warn("hive streaming failed. ",e);
         }
     }
 
@@ -130,13 +131,12 @@ public class HiveBolt extends  BaseRichBolt {
             try {
                 while (execService.isTerminated() == false) {
                     execService.awaitTermination(
-                                                 Math.max(defaultCallTimeout, callTimeout), TimeUnit.MILLISECONDS);
+                                 Math.max(defaultCallTimeout, callTimeout), TimeUnit.MILLISECONDS);
                 }
             } catch (InterruptedException ex) {
                 LOG.warn("shutdown interrupted on " + execService, ex);
             }
         }
-
         callTimeoutPool = null;
         super.cleanup();
         LOG.info("Hive Bolt stopped");
@@ -158,13 +158,12 @@ public class HiveBolt extends  BaseRichBolt {
             LOG.warn("hive.txnsPerBatch must be a positive number. Defaulting to "+defaultTxnsPerBatch);
             txnsPerBatch = defaultTxnsPerBatch;
         }
+
         batchSize = conf.containsKey("batchSize") ? (Integer)conf.get("batchSize") : null;
         if(batchSize == null || batchSize<0) {
             LOG.warn("batchSize must be  positive number. Defaulting to " + defaultBatchSize);
             batchSize = defaultBatchSize;
         }
-
-        idleTimeout = conf.containsKey("idleTimeout") ? (Integer)conf.get("idleTimeout") : defaultIdleTimeout;
 
         callTimeout = conf.containsKey("callTimeout") ? (Integer)conf.get("callTimeout") : null;
         if(callTimeout == null || callTimeout<0) {
@@ -177,7 +176,6 @@ public class HiveBolt extends  BaseRichBolt {
             LOG.warn("heartBeatInterval must be  positive number. Defaulting to " + defautHeartBeatInterval);
             heartBeatInterval = defautHeartBeatInterval;
         }
-        maxOpenConnections = conf.containsKey("maxOpenConnections") ? (Integer)conf.get("maxOpenConnections") : defaultMaxOpenConnections;
         autoCreatePartitions =  conf.containsKey("autoCreatePartitions") ? (Boolean)conf.get("autoCreatePartitions") : false;
     }
 
@@ -192,15 +190,10 @@ public class HiveBolt extends  BaseRichBolt {
         }
     }
 
-    private void enableHeartBeatOnAllWriters() {
-        writer.setHearbeatNeeded();
-    }
-
     private HiveEndPoint makeEndPoint() throws ConnectionError {
         if(partitionVals==null) {
             return new HiveEndPoint(metaStoreURI, databaseName, tableName, null);
         }
         return new HiveEndPoint(metaStoreURI, databaseName, tableName, partitionVals);
     }
-
 }

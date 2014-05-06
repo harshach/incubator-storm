@@ -57,7 +57,9 @@ import org.apache.hive.hcatalog.streaming.*;
 
 public class TestHiveBolt {
     final static String dbName = "testdb";
-    final static String tblName = "test_table1";
+    final static String tblName = "test_table";
+    final static String dbName1 = "testdb1";
+    final static String tblName1 = "test_table1";
     final static String PART1_NAME = "city";
     final static String PART2_NAME = "state";
     final static String[] partNames = { PART1_NAME, PART2_NAME };
@@ -87,6 +89,7 @@ public class TestHiveBolt {
         port=9083;
         dbLocation = new String();
         metaStoreURI=null;
+
         conf = new HiveConf(this.getClass());
         HiveSetupUtil.setConfValues(conf);
         SessionState.start(new CliSessionState(conf));
@@ -99,31 +102,9 @@ public class TestHiveBolt {
         MockitoAnnotations.initMocks(this);
         HiveSetupUtil.dropDB(conf, dbName);
         dbLocation = "raw://" + dbFolder.newFolder(dbName + ".db").getCanonicalPath();
-        HiveSetupUtil.createDbAndTable(conf, dbName, tblName, Arrays.asList(partitionVals.split(",")), colNames.split(","),
-                colTypes, partNames, dbLocation);
+        HiveSetupUtil.createDbAndTable(conf, dbName, tblName, Arrays.asList(partitionVals.split(",")),
+                                       colNames.split(","),colTypes, partNames, dbLocation);
     }
-
-    // @Test
-    // public void testLocalMeatstore() throws Exception {
-    //     LOG.info("testing local store");
-    //     String metaStoreURI="thrift://127.0.0.1:9083";
-    //     bolt = new HiveBolt(metaStoreURI,dbName,tblName);
-    //     String newPartitionVals = "san jose,ca";
-    //     String colNames1 = "id,name";
-    //     config.put("hive.partitions", newPartitionVals);
-    //     config.put("hive.columns",colNames1);
-    //     config.put("hive.txnsPerBatch",2);
-    //     config.put("batchSize",10);
-    //     bolt.prepare(config,null,new OutputCollector(collector));
-    //     Integer id = 1;
-    //     String msg = "test";
-    //     for(int i=0; i < 20; i++) {
-    //         Tuple tuple = generateTestTuple(id,msg);
-    //         bolt.execute(tuple);
-    //         verify(collector).ack(tuple);
-    //     }
-    //     bolt.cleanup();
-    // }
 
     @Test
     public void testEndpointConnection() throws Exception {
@@ -138,33 +119,10 @@ public class TestHiveBolt {
     }
 
     @Test
-    public void executeWithByteArrayIdandMessage()
+    public void testWithByteArrayIdandMessage()
         throws Exception {
-
         bolt = new HiveBolt(metaStoreURI,dbName,tblName);
         config.put("hive.partitions",partitionVals);
-        config.put("hive.columns",colNames);
-        config.put("hive.txnsPerBatch",2);
-        config.put("batchSize",2);
-        config.put("autoCreatePartitions",true);
-        bolt.prepare(config,null,new OutputCollector(collector));
-        Integer id = 100;
-        String msg = "test-123";
-        checkRecordCountInTable(tblName,dbName,0);
-        for (int i=0; i < 4; i++) {
-            Tuple tuple = generateTestTuple(id,msg);
-            bolt.execute(tuple);
-            verify(collector).ack(tuple);
-        }
-        bolt.cleanup();
-        checkRecordCountInTable(tblName, dbName, 4);
-    }
-
-    @Test
-    public void executeWithoutPartitions()
-        throws Exception {
-
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName);
         config.put("hive.columns",colNames);
         config.put("hive.txnsPerBatch",2);
         config.put("batchSize",2);
@@ -180,6 +138,30 @@ public class TestHiveBolt {
         }
         bolt.cleanup();
         checkRecordCountInTable(tblName, dbName, 4);
+    }
+
+    @Test
+    public void testWithoutPartitions()
+        throws Exception {
+        HiveSetupUtil.createDbAndTable(conf, dbName1, tblName1,null,
+                                       colNames.split(","),colTypes,null, dbLocation);
+        bolt = new HiveBolt(metaStoreURI,dbName1,tblName1);
+        config.put("hive.columns",colNames);
+        config.put("hive.txnsPerBatch",2);
+        config.put("batchSize",2);
+        config.put("autoCreatePartitions",false);
+        bolt.prepare(config,null,new OutputCollector(collector));
+        Integer id = 100;
+        String msg = "test-123";
+        checkRecordCountInTable(tblName1,dbName1,0);
+        for (int i=0; i < 4; i++) {
+            Tuple tuple = generateTestTuple(id,msg);
+            bolt.execute(tuple);
+            verify(collector).ack(tuple);
+        }
+        bolt.cleanup();
+        checkRecordCountInTable(tblName1, dbName1, 4);
+        HiveSetupUtil.dropDB(conf,dbName1);
     }
 
 
@@ -219,7 +201,7 @@ public class TestHiveBolt {
             bolt.execute(tuple);
             verify(collector).ack(tuple);
         }
-        bolt.;
+        bolt.cleanup();
         checkRecordCountInTable(tblName, dbName, 100);
     }
 
