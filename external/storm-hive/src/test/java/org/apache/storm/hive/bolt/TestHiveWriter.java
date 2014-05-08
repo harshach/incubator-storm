@@ -38,7 +38,8 @@ import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.TupleImpl;
 import backtype.storm.tuple.Values;
-
+import org.apache.storm.hive.bolt.mapper.SimpleHiveMapper;
+import org.apache.hadoop.hive.metastore.txn.TxnDbUtil;
 
 import java.io.IOException;
 import java.util.Arrays;
@@ -54,8 +55,8 @@ public class TestHiveWriter {
     public static final String PART1_NAME = "city";
     public static final String PART2_NAME = "state";
     public static final String[] partNames = { PART1_NAME, PART2_NAME };
-    final String partitionVals = "sunnyvale,ca";
-    final String colNames = "id,msg";
+    final String[] partitionVals = {"sunnyvale","ca"};
+    final String[] colNames = {"id","msg"};
     private String[] colTypes = { "int", "string" };
     private final int port;
     private final String metaStoreURI;
@@ -77,6 +78,10 @@ public class TestHiveWriter {
 
         // 1) Start metastore
         conf = new HiveConf(this.getClass());
+        conf.set("fs.raw.impl", HiveSetupUtil.RawFileSystem.class.getName());
+        TxnDbUtil.setConfValues(conf);
+        TxnDbUtil.cleanDb();
+        TxnDbUtil.prepDb();
         HiveSetupUtil.setConfValues(conf);
         if(metaStoreURI!=null) {
             conf.setVar(HiveConf.ConfVars.METASTOREURIS, metaStoreURI);
@@ -91,23 +96,29 @@ public class TestHiveWriter {
         // 1) Setup tables
         HiveSetupUtil.dropDB(conf, dbName);
         String dbLocation = dbFolder.newFolder(dbName).getCanonicalPath() + ".db";
-        HiveSetupUtil.createDbAndTable(conf, dbName, tblName, Arrays.asList(partitionVals.split(",")),
-                                       colNames.split(","),colTypes, partNames, dbLocation);
+        HiveSetupUtil.createDbAndTable(conf, dbName, tblName, Arrays.asList(partitionVals),
+                                       colNames,colTypes, partNames, dbLocation);
     }
 
     @Test
     public void testInstantiate() throws Exception {
-        HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals.split(",")));
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+        HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals));
         HiveWriter writer = new HiveWriter(endPoint, 10, true, timeout
-                                           ,callTimeoutPool, colNames.split(","));
+                                           ,callTimeoutPool,mapper);
         writer.close();
     }
 
     @Test
     public void testWriteBasic() throws Exception {
-        HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals.split(",")));
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+        HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals));
         HiveWriter writer = new HiveWriter(endPoint, 10, true, timeout
-                                           , callTimeoutPool, colNames.split(","));
+                                           , callTimeoutPool, mapper);
         writeTuples(writer,3);
         writer.flush(false);
         writer.close();
@@ -116,9 +127,13 @@ public class TestHiveWriter {
 
     @Test
     public void testWriteMultiFlush() throws Exception {
-        HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals.split(",")));
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+
+        HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals));
         HiveWriter writer = new HiveWriter(endPoint, 10, true, timeout
-                                           , callTimeoutPool, colNames.split(","));
+                                           , callTimeoutPool, mapper);
         Tuple tuple = generateTestTuple("1","abc");
         writer.write(tuple);
         checkRecordCountInTable(dbName,tblName,0);

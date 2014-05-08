@@ -30,6 +30,7 @@ import java.util.concurrent.TimeoutException;
 
 import org.apache.hive.hcatalog.streaming.*;
 
+import org.apache.storm.hive.bolt.mapper.HiveMapper;
 import backtype.storm.tuple.Tuple;
 
 import org.slf4j.Logger;
@@ -46,17 +47,12 @@ class HiveWriter {
     private final int txnsPerBatch;
     private final RecordWriter recordWriter;
     private TransactionBatch txnBatch;
-
     private final ExecutorService callTimeoutPool;
 
     private final long callTimeout;
     private volatile ScheduledFuture<Void> idleFuture;
 
     private long lastUsed; // time of last flush on this writer
-    private int batchCounter;
-    private long tupleCounter;
-    private long processSize;
-
     protected boolean closed; // flag indicating HiveWriter was closed
     private boolean autoCreatePartitions;
 
@@ -64,7 +60,7 @@ class HiveWriter {
 
     HiveWriter(HiveEndPoint endPoint, int txnsPerBatch,
                boolean autoCreatePartitions, long callTimeout,
-               ExecutorService callTimeoutPool, String[] columnVals)
+               ExecutorService callTimeoutPool, HiveMapper mapper)
         throws IOException, ClassNotFoundException, InterruptedException
                , StreamingException {
         this.autoCreatePartitions = autoCreatePartitions;
@@ -73,7 +69,7 @@ class HiveWriter {
         this.endPoint = endPoint;
         this.connection = newConnection();
         this.txnsPerBatch = txnsPerBatch;
-        this.recordWriter = new DelimitedInputWriter(columnVals, ",", endPoint);
+        this.recordWriter = new DelimitedInputWriter(mapper.getColumnNames(), mapper.getFieldDelimiter(), endPoint);
         this.txnBatch = nextTxnBatch(recordWriter);
         this.closed = false;
         this.lastUsed = System.currentTimeMillis();
@@ -82,15 +78,6 @@ class HiveWriter {
     @Override
     public String toString() {
         return endPoint.toString();
-    }
-
-    /**
-     * Clear the class counters
-     */
-    private void resetCounters() {
-        tupleCounter = 0;
-        processSize = 0;
-        batchCounter = 0;
     }
 
     void setHearbeatNeeded() {
@@ -145,8 +132,6 @@ class HiveWriter {
                      + ". Closing Transaction Batch and rethrowing exception.");
             throw new IOException("Write to hive endpoint failed: " + endPoint, e);
         }
-        // Update Statistics
-        tupleCounter++;
     }
 
     /**
@@ -261,7 +246,9 @@ class HiveWriter {
         callWithTimeout(new CallRunner<Void>() {
                 @Override
                     public Void call() throws Exception {
-                    txnBatch.close(); // could block
+                    if(txnBatch != null) {
+                        txnBatch.close(); // could block
+                    }
                     return null;
                 }
             });
@@ -291,12 +278,7 @@ class HiveWriter {
         Future<T> future = callTimeoutPool.submit(new Callable<T>() {
                 @Override
                 public T call() throws Exception {
-                    //        return runPrivileged(new PrivilegedExceptionAction<T>() {
-                    //          @Override
-                    //          public T run() throws Exception {
                     return callRunner.call();
-                    //          }
-                    //        });
                 }
             });
         try {

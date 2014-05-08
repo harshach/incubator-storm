@@ -28,11 +28,15 @@ import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.TupleImpl;
 import backtype.storm.tuple.Values;
 
+import org.apache.storm.hive.bolt.mapper.SimpleHiveMapper;
+
 import org.apache.hadoop.hive.cli.CliSessionState;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.CommandNeedRetryException;
 import org.apache.hadoop.hive.ql.Driver;
 import org.apache.hadoop.hive.ql.session.SessionState;
+import org.apache.hadoop.hive.serde.serdeConstants;
+import org.apache.hadoop.hive.metastore.txn.TxnDbUtil;
 
 import org.junit.Before;
 import org.junit.Rule;
@@ -66,8 +70,8 @@ public class TestHiveBolt {
     final String partitionVals = "sunnyvale,ca";
     private static final String COL1 = "id";
     private static final String COL2 = "msg";
-    final String colNames = "id,msg";
-    private String[] colTypes = { "int", "string" };
+    final String[] colNames = {COL1,COL2};
+    private String[] colTypes = {serdeConstants.INT_TYPE_NAME, serdeConstants.STRING_TYPE_NAME};
     private final HiveConf conf;
     private final Driver driver;
     private final int port ;
@@ -89,9 +93,12 @@ public class TestHiveBolt {
         port=9083;
         dbLocation = new String();
         metaStoreURI=null;
-
         conf = new HiveConf(this.getClass());
+        conf.set("fs.raw.impl", HiveSetupUtil.RawFileSystem.class.getName());
         HiveSetupUtil.setConfValues(conf);
+        TxnDbUtil.setConfValues(conf);
+        TxnDbUtil.cleanDb();
+        TxnDbUtil.prepDb();
         SessionState.start(new CliSessionState(conf));
         driver = new Driver(conf);
         driver.init();
@@ -103,7 +110,7 @@ public class TestHiveBolt {
         HiveSetupUtil.dropDB(conf, dbName);
         dbLocation = "raw://" + dbFolder.newFolder(dbName + ".db").getCanonicalPath();
         HiveSetupUtil.createDbAndTable(conf, dbName, tblName, Arrays.asList(partitionVals.split(",")),
-                                       colNames.split(","),colTypes, partNames, dbLocation);
+                                       colNames,colTypes, partNames, dbLocation);
     }
 
     @Test
@@ -121,88 +128,103 @@ public class TestHiveBolt {
     @Test
     public void testWithByteArrayIdandMessage()
         throws Exception {
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName);
-        config.put("hive.partitions",partitionVals);
-        config.put("hive.columns",colNames);
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
         config.put("hive.txnsPerBatch",2);
         config.put("batchSize",2);
-        config.put("autoCreatePartitions",false);
+        config.put("autoCreatePartitions",true);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
+        String city = "sunnyvale";
+        String state = "ca";
         checkRecordCountInTable(tblName,dbName,0);
         for (int i=0; i < 4; i++) {
-            Tuple tuple = generateTestTuple(id,msg);
+            Tuple tuple = generateTestTuple(id,msg,city,state);
             bolt.execute(tuple);
             verify(collector).ack(tuple);
         }
-        bolt.cleanup();
         checkRecordCountInTable(tblName, dbName, 4);
+        bolt.cleanup();
     }
+
 
     @Test
     public void testWithoutPartitions()
         throws Exception {
+        HiveSetupUtil.dropDB(conf,dbName1);
         HiveSetupUtil.createDbAndTable(conf, dbName1, tblName1,null,
-                                       colNames.split(","),colTypes,null, dbLocation);
-        bolt = new HiveBolt(metaStoreURI,dbName1,tblName1);
-        config.put("hive.columns",colNames);
+                                       colNames,colTypes,null, dbLocation);
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames));
+            bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper);
         config.put("hive.txnsPerBatch",2);
         config.put("batchSize",2);
         config.put("autoCreatePartitions",false);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
+        String city = "sunnyvale";
+        String state = "ca";
         checkRecordCountInTable(tblName1,dbName1,0);
         for (int i=0; i < 4; i++) {
-            Tuple tuple = generateTestTuple(id,msg);
+            Tuple tuple = generateTestTuple(id,msg,city,state);
             bolt.execute(tuple);
             verify(collector).ack(tuple);
         }
         bolt.cleanup();
         checkRecordCountInTable(tblName1, dbName1, 4);
-        HiveSetupUtil.dropDB(conf,dbName1);
-    }
 
+    }
 
     @Test
     public void testData()
         throws Exception {
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName);
-        config.put("hive.partitions", partitionVals);
-        config.put("hive.columns",colNames);
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
         config.put("hive.txnsPerBatch",2);
         config.put("batchSize",1);
+        config.put("autoCreatePartitions",true);
         bolt.prepare(config,null,new OutputCollector(collector));
-        Tuple tuple1 = generateTestTuple(1,"SJC");
-        Tuple tuple2 = generateTestTuple(2,"SFO");
+        Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
+        Tuple tuple2 = generateTestTuple(2,"SFO","Sunnyvale","CA");
         bolt.execute(tuple1);
         verify(collector).ack(tuple1);
         bolt.execute(tuple2);
         verify(collector).ack(tuple2);
+        checkDataWritten(tblName, dbName, "1,SJC,Sunnyvale,CA", "2,SFO,Sunnyvale,CA");
         bolt.cleanup();
-        checkDataWritten(tblName, dbName, "1,SJC", "2,SFO");
     }
 
+
     @Test
-    public void execute100Tuples()
+    public void testMultiPartitionTuples()
         throws Exception {
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName);
-        config.put("hive.partitions", partitionVals);
-        config.put("hive.columns",colNames);
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
         config.put("hive.txnsPerBatch",10);
         config.put("batchSize",10);
+        config.put("autoCreatePartitions",true);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 1;
         String msg = "test";
+        String city = "San Jose";
+        String state = "CA";
         checkRecordCountInTable(tblName,dbName,0);
         for(int i=0; i < 100; i++) {
-            Tuple tuple = generateTestTuple(id,msg);
+            Tuple tuple = generateTestTuple(id,msg,city,state);
             bolt.execute(tuple);
             verify(collector).ack(tuple);
         }
-        bolt.cleanup();
         checkRecordCountInTable(tblName, dbName, 100);
+        bolt.cleanup();
     }
 
     private void checkRecordCountInTable(String tableName,String dbName,int expectedCount)
@@ -223,21 +245,21 @@ public class TestHiveBolt {
         throws CommandNeedRetryException, IOException {
         ArrayList<String> results = listRecordsInTable(tableName,dbName);
         for(int i = 0; i < row.length; i++) {
-            String resultRow = results.get(i).split("\t")[0]+","+results.get(i).split("\t")[1];
+            String resultRow = results.get(i).replace("\t",",");
             assertEquals(row[i],resultRow);
         }
     }
 
-    private Tuple generateTestTuple(Object id, Object msg) {
+    private Tuple generateTestTuple(Object id, Object msg,Object city,Object state) {
         TopologyBuilder builder = new TopologyBuilder();
         GeneralTopologyContext topologyContext = new GeneralTopologyContext(builder.createTopology(),
                                                                              new Config(), new HashMap(), new HashMap(), new HashMap(), "") {
                 @Override
                 public Fields getComponentOutputFields(String componentId, String streamId) {
-                    return new Fields("id", "msg");
+                    return new Fields("id", "msg","city","state");
                 }
             };
-        return new TupleImpl(topologyContext, new Values(id, msg), 1, "");
+        return new TupleImpl(topologyContext, new Values(id, msg,city,state), 1, "");
     }
 
 }

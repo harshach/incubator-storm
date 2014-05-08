@@ -32,7 +32,7 @@ import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.Values;
 
-
+import org.apache.storm.hive.bolt.mapper.SimpleHiveMapper;
 import org.apache.hadoop.hive.cli.CliSessionState;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.metastore.api.MetaException;
@@ -56,16 +56,17 @@ public class HiveTopology {
         String metaStoreURI = args[0];
         String dbName = args[1];
         String tblName = args[2];
-        String partitionVals = "sunnyvale,ca";
-        String colNames = "id,name,phone,street";
+        String[] partNames = {"city","state"};
+        String[] colNames = {"id","name","phone","street","city","state"};
         Integer txnsPerBatch = 10;
         Integer batchSize = 100;
         Config config = new Config();
         config.setNumWorkers(1);
-        config.put("hive.partitions", partitionVals);
-        config.put("hive.columns",colNames);
         UserDataSpout spout = new UserDataSpout();
-        HiveBolt hiveBolt = new HiveBolt(metaStoreURI,dbName,tblName);
+        SimpleHiveMapper mapper = new SimpleHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+        HiveBolt hiveBolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout(USER_SPOUT_ID, spout, 1);
         // SentenceSpout --> MyBolt
@@ -90,10 +91,10 @@ public class HiveTopology {
         private ConcurrentHashMap<UUID, Values> pending;
         private SpoutOutputCollector collector;
         private String[] sentences = {
-                "1,user1,123456,street1",
-                "2,user2,123456,street2",
-                "3,user3,123456,street3",
-                "4,user4,123456,street4",
+                "1,user1,123456,street1,sunnyvale,ca",
+                "2,user2,123456,street2,sunnyvale,ca",
+                "3,user3,123456,street3,san jose,ca",
+                "4,user4,123456,street4,san jose,ca",
         };
         private int index = 0;
         private int count = 0;
