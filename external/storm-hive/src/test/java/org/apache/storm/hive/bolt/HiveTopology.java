@@ -38,23 +38,24 @@ import java.util.concurrent.ConcurrentHashMap;
 public class HiveTopology {
     static final String USER_SPOUT_ID = "user-spout";
     static final String BOLT_ID = "my-hive-bolt";
-    static final String TOPOLOGY_NAME = "hive-test-topology";
+    static final String TOPOLOGY_NAME = "hive-test-topology1";
 
     public static void main(String[] args) throws Exception {
         String metaStoreURI = args[0];
         String dbName = args[1];
         String tblName = args[2];
         String[] partNames = {"city","state"};
-        String[] colNames = {"id","name","phone","street","city","state"};
-        Integer txnsPerBatch = 10;
-        Integer batchSize = 100;
+        String[] colNames = {"id","name","phone","street"};
         Config config = new Config();
         config.setNumWorkers(1);
         UserDataSpout spout = new UserDataSpout();
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-        HiveBolt hiveBolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
+        HiveBolt hiveBolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+            .withTxnsPerBatch(10)
+            .withBatchSize(1000)
+            .withIdleTimeout(10);
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout(USER_SPOUT_ID, spout, 1);
         // SentenceSpout --> MyBolt
@@ -62,7 +63,7 @@ public class HiveTopology {
                 .shuffleGrouping(USER_SPOUT_ID);
         LocalCluster cluster = new LocalCluster();
         cluster.submitTopology(TOPOLOGY_NAME, config, builder.createTopology());
-        waitForSeconds(5);
+        waitForSeconds(20);
         cluster.killTopology(TOPOLOGY_NAME);
         cluster.shutdown();
         System.exit(0);
@@ -89,7 +90,7 @@ public class HiveTopology {
         private long total = 0L;
 
         public void declareOutputFields(OutputFieldsDeclarer declarer) {
-            declarer.declare(new Fields("id", "name","phone","street"));
+            declarer.declare(new Fields("id","name","phone","street","city","state"));
         }
 
         public void open(Map config, TopologyContext context,
@@ -100,7 +101,7 @@ public class HiveTopology {
 
         public void nextTuple() {
             String[] user = sentences[index].split(",");
-            Values values = new Values(Integer.parseInt(user[0]),user[1],user[2],user[3]);
+            Values values = new Values(Integer.parseInt(user[0]),user[1],user[2],user[3],user[4],user[5]);
             UUID msgId = UUID.randomUUID();
             this.pending.put(msgId, values);
             this.collector.emit(values, msgId);

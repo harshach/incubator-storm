@@ -136,10 +136,9 @@ public class TestHiveBolt {
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
 
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
-        config.put("hive.txnsPerBatch",2);
-        config.put("batchSize",2);
-        config.put("autoCreatePartitions",true);
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+            .withTxnsPerBatch(2)
+            .withBatchSize(2);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
@@ -164,10 +163,10 @@ public class TestHiveBolt {
                                        colNames,colTypes,null, dbLocation);
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames));
-            bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper);
-        config.put("hive.txnsPerBatch",2);
-        config.put("batchSize",2);
-        config.put("autoCreatePartitions",false);
+            bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper)
+                .withTxnsPerBatch(2)
+                .withBatchSize(2)
+                .withAutoCreatePartitions(false);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
@@ -195,10 +194,9 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withTimeAsPartitionField(timeFormat);
-        bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper);
-        config.put("hive.txnsPerBatch",2);
-        config.put("batchSize", 1);
-        config.put("autoCreatePartitions",true);
+        bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper)
+            .withTxnsPerBatch(2)
+            .withBatchSize(1);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
@@ -221,10 +219,9 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
-        config.put("hive.txnsPerBatch", 2);
-        config.put("batchSize", 1);
-        config.put("autoCreatePartitions",true);
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+            .withTxnsPerBatch(2)
+            .withBatchSize(1);
         bolt.prepare(config,null,new OutputCollector(collector));
         Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
         Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
@@ -244,10 +241,9 @@ public class TestHiveBolt {
         JsonRecordHiveMapper mapper = new JsonRecordHiveMapper()
             .withColumnFields(new Fields(colNames1))
             .withPartitionFields(new Fields(partNames));
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
-        config.put("hive.txnsPerBatch",2);
-        config.put("batchSize",1);
-        config.put("autoCreatePartitions",true);
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+            .withBatchSize(1)
+            .withTxnsPerBatch(2);
         bolt.prepare(config,null,new OutputCollector(collector));
         Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
         Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
@@ -266,10 +262,9 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
-        config.put("hive.txnsPerBatch",10);
-        config.put("batchSize",10);
-        config.put("autoCreatePartitions",true);
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+            .withTxnsPerBatch(10)
+            .withBatchSize(10);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 1;
         String msg = "test";
@@ -304,7 +299,7 @@ public class TestHiveBolt {
         ArrayList<String> results = listRecordsInTable(tableName,dbName);
         for(int i = 0; i < row.length && results.size() > 0; i++) {
             String resultRow = results.get(i).replace("\t",",");
-            //System.out.println(resultRow);
+            System.out.println(resultRow);
             assertEquals(row[i],resultRow);
         }
     }
