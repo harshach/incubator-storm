@@ -28,7 +28,8 @@ import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.TupleImpl;
 import backtype.storm.tuple.Values;
 
-import org.apache.storm.hive.bolt.mapper.SimpleHiveMapper;
+import org.apache.storm.hive.bolt.mapper.DelimitedRecordHiveMapper;
+import org.apache.storm.hive.bolt.mapper.JsonRecordHiveMapper;
 
 import org.apache.hadoop.hive.cli.CliSessionState;
 import org.apache.hadoop.hive.conf.HiveConf;
@@ -55,6 +56,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.io.IOException;
+import java.util.Date;
+import java.text.SimpleDateFormat;
 
 
 import org.apache.hive.hcatalog.streaming.*;
@@ -71,6 +74,7 @@ public class TestHiveBolt {
     private static final String COL1 = "id";
     private static final String COL2 = "msg";
     final String[] colNames = {COL1,COL2};
+    final String[] colNames1 = {COL2,COL1};
     private String[] colTypes = {serdeConstants.INT_TYPE_NAME, serdeConstants.STRING_TYPE_NAME};
     private final HiveConf conf;
     private final Driver driver;
@@ -110,7 +114,7 @@ public class TestHiveBolt {
         HiveSetupUtil.dropDB(conf, dbName);
         dbLocation = "raw://" + dbFolder.newFolder(dbName + ".db").getCanonicalPath();
         HiveSetupUtil.createDbAndTable(conf, dbName, tblName, Arrays.asList(partitionVals.split(",")),
-                                       colNames,colTypes, partNames, dbLocation);
+                colNames, colTypes, partNames, dbLocation);
     }
 
     @Test
@@ -128,7 +132,7 @@ public class TestHiveBolt {
     @Test
     public void testWithByteArrayIdandMessage()
         throws Exception {
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
 
@@ -158,7 +162,7 @@ public class TestHiveBolt {
         HiveSetupUtil.dropDB(conf,dbName1);
         HiveSetupUtil.createDbAndTable(conf, dbName1, tblName1,null,
                                        colNames,colTypes,null, dbLocation);
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames));
             bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper);
         config.put("hive.txnsPerBatch",2);
@@ -181,10 +185,64 @@ public class TestHiveBolt {
     }
 
     @Test
+    public void testWithTimeformat()
+        throws Exception {
+        String[] partNames1 = {"date"};
+        String timeFormat = "yyyy/MM/dd";
+        HiveSetupUtil.dropDB(conf,dbName1);
+        HiveSetupUtil.createDbAndTable(conf, dbName1, tblName1,null,
+                                       colNames,colTypes,partNames1, dbLocation);
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
+            .withColumnFields(new Fields(colNames))
+            .withTimeAsPartitionField(timeFormat);
+        bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper);
+        config.put("hive.txnsPerBatch",2);
+        config.put("batchSize", 1);
+        config.put("autoCreatePartitions",true);
+        bolt.prepare(config,null,new OutputCollector(collector));
+        Integer id = 100;
+        String msg = "test-123";
+        Date d = new Date();
+        SimpleDateFormat parseDate = new SimpleDateFormat(timeFormat);
+        String today=parseDate.format(d.getTime());
+        checkRecordCountInTable(tblName1,dbName1,0);
+        for (int i=0; i < 2; i++) {
+            Tuple tuple = generateTestTuple(id,msg,null,null);
+            bolt.execute(tuple);
+            verify(collector).ack(tuple);
+        }
+        checkDataWritten(tblName1, dbName1, "100,test-123,"+today, "100,test-123,"+today);
+        bolt.cleanup();
+    }
+
+    @Test
     public void testData()
         throws Exception {
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
+            .withPartitionFields(new Fields(partNames));
+        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
+        config.put("hive.txnsPerBatch", 2);
+        config.put("batchSize", 1);
+        config.put("autoCreatePartitions",true);
+        bolt.prepare(config,null,new OutputCollector(collector));
+        Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
+        Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
+        bolt.execute(tuple1);
+        verify(collector).ack(tuple1);
+        bolt.execute(tuple2);
+        verify(collector).ack(tuple2);
+        checkDataWritten(tblName, dbName,"2,SFO,San Jose,CA","1,SJC,Sunnyvale,CA");
+        bolt.cleanup();
+    }
+
+    @Test
+    public void testJsonWriter()
+        throws Exception {
+        // json record doesn't need columns to be in the same order
+        // as table in hive.
+        JsonRecordHiveMapper mapper = new JsonRecordHiveMapper()
+            .withColumnFields(new Fields(colNames1))
             .withPartitionFields(new Fields(partNames));
         bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
         config.put("hive.txnsPerBatch",2);
@@ -192,12 +250,12 @@ public class TestHiveBolt {
         config.put("autoCreatePartitions",true);
         bolt.prepare(config,null,new OutputCollector(collector));
         Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
-        Tuple tuple2 = generateTestTuple(2,"SFO","Sunnyvale","CA");
+        Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
         bolt.execute(tuple1);
         verify(collector).ack(tuple1);
         bolt.execute(tuple2);
         verify(collector).ack(tuple2);
-        checkDataWritten(tblName, dbName, "1,SJC,Sunnyvale,CA", "2,SFO,Sunnyvale,CA");
+        checkDataWritten(tblName, dbName, "2,SFO,San Jose,CA", "1,SJC,Sunnyvale,CA");
         bolt.cleanup();
     }
 
@@ -205,7 +263,7 @@ public class TestHiveBolt {
     @Test
     public void testMultiPartitionTuples()
         throws Exception {
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
         bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper);
@@ -244,8 +302,9 @@ public class TestHiveBolt {
     private void checkDataWritten(String tableName,String dbName,String... row)
         throws CommandNeedRetryException, IOException {
         ArrayList<String> results = listRecordsInTable(tableName,dbName);
-        for(int i = 0; i < row.length; i++) {
+        for(int i = 0; i < row.length && results.size() > 0; i++) {
             String resultRow = results.get(i).replace("\t",",");
+            //System.out.println(resultRow);
             assertEquals(row[i],resultRow);
         }
     }

@@ -20,7 +20,13 @@ package org.apache.storm.hive.bolt.mapper;
 
 import backtype.storm.tuple.Tuple;
 import java.util.List;
+import org.apache.hive.hcatalog.streaming.HiveEndPoint;
+import org.apache.hive.hcatalog.streaming.RecordWriter;
+import org.apache.hive.hcatalog.streaming.TransactionBatch;
+import org.apache.hive.hcatalog.streaming.StreamingException;
 import java.io.Serializable;
+
+import java.io.IOException;
 
 /**
  * Maps a <code>backtype.storm.tuple.Tupe</code> object
@@ -29,23 +35,30 @@ import java.io.Serializable;
 public interface HiveMapper extends Serializable {
 
     /**
-     * Given a tuple, return a byte array of Hive columns to insert.
+     * Given a endPoint, returns a RecordWriter with columnNames.
      *
      * @param tuple
      * @return
      */
 
-    byte[] columns(Tuple tuple);
+    RecordWriter createRecordWriter(HiveEndPoint endPoint)
+        throws StreamingException, IOException, ClassNotFoundException;
+
+    void write(TransactionBatch txnBatch, Tuple tuple)
+        throws StreamingException, IOException, InterruptedException;
 
     /**
      * Given a tuple, return a hive partition values list.
      *
      * @param tuple
-     * @return
+     * @return List<String>
      */
-    List<String> partitions(Tuple tuple);
+    List<String> mapPartitions(Tuple tuple);
 
-    String[] getColumnNames();
-    String getFieldDelimiter();
-
+    /**
+     * Given a tuple, maps to a HiveRecord based on columnFields
+     * @Param Tuple
+     * @return byte[]
+     */
+    byte[] mapRecord(Tuple tuple);
 }

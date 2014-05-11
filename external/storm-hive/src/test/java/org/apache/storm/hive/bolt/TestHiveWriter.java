@@ -26,6 +26,7 @@ import org.apache.hadoop.hive.ql.CommandNeedRetryException;
 import org.apache.hadoop.hive.ql.Driver;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hive.hcatalog.streaming.HiveEndPoint;
+import org.apache.storm.hive.bolt.mapper.DelimitedRecordHiveMapper;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -38,7 +39,6 @@ import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.TupleImpl;
 import backtype.storm.tuple.Values;
-import org.apache.storm.hive.bolt.mapper.SimpleHiveMapper;
 import org.apache.hadoop.hive.metastore.txn.TxnDbUtil;
 
 import java.io.IOException;
@@ -102,7 +102,7 @@ public class TestHiveWriter {
 
     @Test
     public void testInstantiate() throws Exception {
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
         HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals));
@@ -113,7 +113,7 @@ public class TestHiveWriter {
 
     @Test
     public void testWriteBasic() throws Exception {
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
         HiveEndPoint endPoint = new HiveEndPoint(metaStoreURI, dbName, tblName, Arrays.asList(partitionVals));
@@ -127,7 +127,7 @@ public class TestHiveWriter {
 
     @Test
     public void testWriteMultiFlush() throws Exception {
-        SimpleHiveMapper mapper = new SimpleHiveMapper()
+        DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
 

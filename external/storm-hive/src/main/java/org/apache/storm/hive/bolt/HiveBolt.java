@@ -81,10 +81,6 @@ public class HiveBolt extends  BaseRichBolt {
         this.currentBatchSize = 0;
     }
 
-    HashMap<HiveEndPoint, HiveWriter> getAllWriters() {
-        return allWriters;
-    }
-
     @Override
     public void prepare(Map conf, TopologyContext topologyContext, OutputCollector collector)  {
         try {
@@ -103,7 +99,7 @@ public class HiveBolt extends  BaseRichBolt {
     @Override
     public void execute(Tuple tuple) {
         try {
-            List<String> partitionVals = mapper.partitions(tuple);
+            List<String> partitionVals = mapper.mapPartitions(tuple);
             HiveEndPoint endPoint = makeEndPoint(partitionVals);
             HiveWriter writer = getOrCreateWriter(endPoint);
             if(timeToSendHeartBeat.compareAndSet(true, false)) {
@@ -206,7 +202,7 @@ public class HiveBolt extends  BaseRichBolt {
 
     private void enableHeartBeatOnAllWriters() {
         for (HiveWriter writer : allWriters.values()) {
-            writer.setHearbeatNeeded();
+            writer.setHeartBeatNeeded();
         }
     }
 

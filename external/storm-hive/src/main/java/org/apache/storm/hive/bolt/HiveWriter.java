@@ -47,16 +47,15 @@ class HiveWriter {
     private final int txnsPerBatch;
     private final RecordWriter recordWriter;
     private TransactionBatch txnBatch;
+    private HiveMapper mapper;
     private final ExecutorService callTimeoutPool;
-
     private final long callTimeout;
-    private volatile ScheduledFuture<Void> idleFuture;
 
     private long lastUsed; // time of last flush on this writer
     protected boolean closed; // flag indicating HiveWriter was closed
     private boolean autoCreatePartitions;
 
-    private boolean hearbeatNeeded = false;
+    private boolean heartBeatNeeded = false;
 
     HiveWriter(HiveEndPoint endPoint, int txnsPerBatch,
                boolean autoCreatePartitions, long callTimeout,
@@ -69,7 +68,8 @@ class HiveWriter {
         this.endPoint = endPoint;
         this.connection = newConnection();
         this.txnsPerBatch = txnsPerBatch;
-        this.recordWriter = new DelimitedInputWriter(mapper.getColumnNames(), mapper.getFieldDelimiter(), endPoint);
+        this.mapper = mapper;
+        this.recordWriter = mapper.createRecordWriter(endPoint);
         this.txnBatch = nextTxnBatch(recordWriter);
         this.closed = false;
         this.lastUsed = System.currentTimeMillis();
@@ -80,12 +80,12 @@ class HiveWriter {
         return endPoint.toString();
     }
 
-    void setHearbeatNeeded() {
-        hearbeatNeeded = true;
+    void setHeartBeatNeeded() {
+        heartBeatNeeded = true;
     }
 
     /**
-     * Write data, update stats <br />
+     * Write data <br />
      *
      * @throws IOException
      * @throws InterruptedException
@@ -93,36 +93,17 @@ class HiveWriter {
     public synchronized void write(final Tuple tuple)
         throws IOException, InterruptedException {
         checkAndThrowInterruptedException();
-        // If idleFuture is not null, cancel it before we move forward to avoid a
-        // close call in the middle of the append.
-        if(idleFuture != null) {
-            idleFuture.cancel(false);
-
-            if(!idleFuture.isDone()) {
-                try {
-                    idleFuture.get(callTimeout, TimeUnit.MILLISECONDS);
-                } catch (TimeoutException ex) {
-                    LOG.warn("Timeout while trying to cancel closing of idle file. Idle" +
-                             " file close may have failed", ex);
-                } catch (Exception ex) {
-                    LOG.warn("Error while trying to cancel closing of idle file. ", ex);
-                }
-            }
-            idleFuture = null;
-        }
-
         if (closed) {
             throw new IllegalStateException("This hive streaming writer was closed " +
                                             "and thus no longer able to write : " + endPoint);
         }
-
         // write the tuple
         try {
             LOG.debug("Writing event to {}", endPoint);
             callWithTimeout(new CallRunner<Void>() {
                     @Override
                         public Void call() throws Exception {
-                        txnBatch.write(generateRecord(tuple));
+                        mapper.write(txnBatch,tuple);
                         return null;
                     }
                 });
@@ -142,8 +123,8 @@ class HiveWriter {
      */
     public void flush(boolean rollToNext)
         throws IOException, InterruptedException, StreamingException {
-        if(hearbeatNeeded) {
-            hearbeatNeeded = false;
+        if(heartBeatNeeded) {
+            heartBeatNeeded = false;
             heartBeat();
         }
         lastUsed = System.currentTimeMillis();
