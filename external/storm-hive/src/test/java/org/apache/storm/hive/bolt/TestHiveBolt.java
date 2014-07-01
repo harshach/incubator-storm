@@ -28,6 +28,7 @@ import backtype.storm.tuple.Tuple;
 import backtype.storm.tuple.TupleImpl;
 import backtype.storm.tuple.Values;
 
+import org.apache.storm.hive.common.HiveOptions;
 import org.apache.storm.hive.bolt.mapper.DelimitedRecordHiveMapper;
 import org.apache.storm.hive.bolt.mapper.JsonRecordHiveMapper;
 
@@ -135,10 +136,10 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName,tblName,mapper)
             .withTxnsPerBatch(2)
             .withBatchSize(2);
+        bolt = new HiveBolt(hiveOptions);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
@@ -163,10 +164,11 @@ public class TestHiveBolt {
                                        colNames,colTypes,null, dbLocation);
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames));
-            bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper)
-                .withTxnsPerBatch(2)
-                .withBatchSize(2)
-                .withAutoCreatePartitions(false);
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName1,tblName1,mapper)
+            .withTxnsPerBatch(2)
+            .withBatchSize(2)
+            .withAutoCreatePartitions(false);
+        bolt = new HiveBolt(hiveOptions);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
@@ -180,7 +182,6 @@ public class TestHiveBolt {
         }
         bolt.cleanup();
         checkRecordCountInTable(tblName1, dbName1, 4);
-
     }
 
     @Test
@@ -194,9 +195,10 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withTimeAsPartitionField(timeFormat);
-        bolt = new HiveBolt(metaStoreURI,dbName1,tblName1,mapper)
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName1,tblName1,mapper)
             .withTxnsPerBatch(2)
             .withBatchSize(1);
+        bolt = new HiveBolt(hiveOptions);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 100;
         String msg = "test-123";
@@ -219,9 +221,10 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName,tblName,mapper)
             .withTxnsPerBatch(2)
             .withBatchSize(1);
+        bolt = new HiveBolt(hiveOptions);
         bolt.prepare(config,null,new OutputCollector(collector));
         Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
         Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
@@ -241,9 +244,10 @@ public class TestHiveBolt {
         JsonRecordHiveMapper mapper = new JsonRecordHiveMapper()
             .withColumnFields(new Fields(colNames1))
             .withPartitionFields(new Fields(partNames));
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
-            .withBatchSize(1)
-            .withTxnsPerBatch(2);
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName,tblName,mapper)
+            .withTxnsPerBatch(2)
+            .withBatchSize(1);
+        bolt = new HiveBolt(hiveOptions);
         bolt.prepare(config,null,new OutputCollector(collector));
         Tuple tuple1 = generateTestTuple(1,"SJC","Sunnyvale","CA");
         Tuple tuple2 = generateTestTuple(2,"SFO","San Jose","CA");
@@ -262,9 +266,10 @@ public class TestHiveBolt {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-        bolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName,tblName,mapper)
             .withTxnsPerBatch(10)
             .withBatchSize(10);
+        bolt = new HiveBolt(hiveOptions);
         bolt.prepare(config,null,new OutputCollector(collector));
         Integer id = 1;
         String msg = "test";

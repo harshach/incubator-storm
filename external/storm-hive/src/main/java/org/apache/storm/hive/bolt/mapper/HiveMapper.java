@@ -19,6 +19,7 @@ package org.apache.storm.hive.bolt.mapper;
 
 
 import backtype.storm.tuple.Tuple;
+import storm.trident.tuple.TridentTuple;
 import java.util.List;
 import org.apache.hive.hcatalog.streaming.HiveEndPoint;
 import org.apache.hive.hcatalog.streaming.RecordWriter;
@@ -61,4 +62,20 @@ public interface HiveMapper extends Serializable {
      * @return byte[]
      */
     byte[] mapRecord(Tuple tuple);
+
+    /**
+     * Given a TridetnTuple, return a hive partition values list.
+     *
+     * @param TridentTuple
+     * @return List<String>
+     */
+    List<String> mapPartitions(TridentTuple tuple);
+
+    /**
+     * Given a TridentTuple, maps to a HiveRecord based on columnFields
+     * @Param TridentTuple
+     * @return byte[]
+     */
+    byte[] mapRecord(TridentTuple tuple);
+
 }

@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package org.apache.storm.hive.bolt;
+package org.apache.storm.hive.common;
 
 import java.io.IOException;
 import java.util.concurrent.Callable;
@@ -37,7 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
-class HiveWriter {
+public class HiveWriter {
 
     private static final Logger LOG = LoggerFactory
         .getLogger(HiveWriter.class);
@@ -47,19 +47,17 @@ class HiveWriter {
     private final int txnsPerBatch;
     private final RecordWriter recordWriter;
     private TransactionBatch txnBatch;
-    private HiveMapper mapper;
     private final ExecutorService callTimeoutPool;
     private final long callTimeout;
 
     private long lastUsed; // time of last flush on this writer
     protected boolean closed; // flag indicating HiveWriter was closed
     private boolean autoCreatePartitions;
-
     private boolean heartBeatNeeded = false;
 
-    HiveWriter(HiveEndPoint endPoint, int txnsPerBatch,
-               boolean autoCreatePartitions, long callTimeout,
-               ExecutorService callTimeoutPool, HiveMapper mapper)
+    public HiveWriter(HiveEndPoint endPoint, int txnsPerBatch,
+                      boolean autoCreatePartitions, long callTimeout,
+                      ExecutorService callTimeoutPool, HiveMapper mapper)
         throws IOException, ClassNotFoundException, InterruptedException
                , StreamingException {
         this.autoCreatePartitions = autoCreatePartitions;
@@ -68,7 +66,6 @@ class HiveWriter {
         this.endPoint = endPoint;
         this.connection = newConnection();
         this.txnsPerBatch = txnsPerBatch;
-        this.mapper = mapper;
         this.recordWriter = mapper.createRecordWriter(endPoint);
         this.txnBatch = nextTxnBatch(recordWriter);
         this.closed = false;
@@ -80,7 +77,7 @@ class HiveWriter {
         return endPoint.toString();
     }
 
-    void setHeartBeatNeeded() {
+    public void setHeartBeatNeeded() {
         heartBeatNeeded = true;
     }
 
@@ -90,8 +87,8 @@ class HiveWriter {
      * @throws IOException
      * @throws InterruptedException
      */
-    public synchronized void write(final Tuple tuple)
-        throws IOException, InterruptedException {
+    public synchronized void write(final byte[] record)
+        throws IOException, InterruptedException, StreamingException {
         checkAndThrowInterruptedException();
         if (closed) {
             throw new IllegalStateException("This hive streaming writer was closed " +
@@ -103,7 +100,7 @@ class HiveWriter {
             callWithTimeout(new CallRunner<Void>() {
                     @Override
                         public Void call() throws Exception {
-                        mapper.write(txnBatch,tuple);
+                        txnBatch.write(record);
                         return null;
                     }
                 });
@@ -295,7 +292,7 @@ class HiveWriter {
         }
     }
 
-    long getLastUsed() {
+    public long getLastUsed() {
         return lastUsed;
     }
 

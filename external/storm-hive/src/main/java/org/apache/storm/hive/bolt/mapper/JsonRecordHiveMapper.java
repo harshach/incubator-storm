@@ -19,6 +19,7 @@ package org.apache.storm.hive.bolt.mapper;
 
 
 import backtype.storm.tuple.Fields;
+import storm.trident.tuple.TridentTuple;
 import backtype.storm.tuple.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,6 +91,31 @@ public class JsonRecordHiveMapper implements HiveMapper {
 
     @Override
     public byte[] mapRecord(Tuple tuple) {
+        JSONObject obj = new JSONObject();
+        if(this.columnFields != null) {
+            for(String field: this.columnFields) {
+                obj.put(field,tuple.getValueByField(field));
+            }
+        }
+        return obj.toJSONString().getBytes();
+    }
+
+    @Override
+    public List<String> mapPartitions(TridentTuple tuple) {
+        List<String> partitionList = new ArrayList<String>();
+        if(this.partitionFields != null) {
+            for(String field: this.partitionFields) {
+                partitionList.add(tuple.getStringByField(field));
+            }
+        }
+        if (this.timeFormat != null) {
+            partitionList.add(getPartitionsByTimeFormat());
+        }
+        return partitionList;
+    }
+
+    @Override
+    public byte[] mapRecord(TridentTuple tuple) {
         JSONObject obj = new JSONObject();
         if(this.columnFields != null) {
             for(String field: this.columnFields) {

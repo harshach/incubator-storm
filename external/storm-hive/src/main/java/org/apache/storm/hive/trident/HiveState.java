@@ -15,37 +15,39 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.storm.hive.trident;
 
-package org.apache.storm.hive.bolt;
-
-import backtype.storm.task.OutputCollector;
-import backtype.storm.task.TopologyContext;
-import backtype.storm.tuple.Tuple;
-import backtype.storm.topology.base.BaseRichBolt;
-import backtype.storm.topology.OutputFieldsDeclarer;
+import storm.trident.operation.TridentCollector;
+import storm.trident.state.State;
+import storm.trident.tuple.TridentTuple;
+import backtype.storm.task.IMetricsContext;
+import backtype.storm.topology.FailedException;
 import org.apache.storm.hive.common.HiveWriter;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import org.apache.storm.hive.common.HiveWriter;
 import org.apache.hive.hcatalog.streaming.*;
 import org.apache.storm.hive.common.HiveOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.Map.Entry;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.io.IOException;
 
-public class HiveBolt extends  BaseRichBolt {
-    private static final Logger LOG = LoggerFactory.getLogger(HiveBolt.class);
-    private OutputCollector collector;
+public class HiveState implements State {
+    private static final Logger LOG = LoggerFactory.getLogger(HiveState.class);
     private HiveOptions options;
     private Integer currentBatchSize;
     private ExecutorService callTimeoutPool;
@@ -53,28 +55,57 @@ public class HiveBolt extends  BaseRichBolt {
     private AtomicBoolean timeToSendHeartBeat = new AtomicBoolean(false);
     HashMap<HiveEndPoint, HiveWriter> allWriters;
 
-    public HiveBolt(HiveOptions options) {
+    public HiveState(HiveOptions options) {
         this.options = options;
         this.currentBatchSize = 0;
     }
 
+
     @Override
-    public void prepare(Map conf, TopologyContext topologyContext, OutputCollector collector)  {
+    public void beginCommit(Long txId) {
+    }
+
+    @Override
+    public void commit(Long txId) {
+    }
+
+    public void prepare(Map conf, IMetricsContext metrics, int partitionIndex, int numPartitions)  {
         try {
-            this.collector = collector;
             allWriters = new HashMap<HiveEndPoint,HiveWriter>();
             String timeoutName = "hive-bolt-%d";
             this.callTimeoutPool = Executors.newFixedThreadPool(1,
-                                new ThreadFactoryBuilder().setNameFormat(timeoutName).build());
+                                                                new ThreadFactoryBuilder().setNameFormat(timeoutName).build());
             setupHeartBeatTimer();
         } catch(Exception e) {
             LOG.warn("unable to make connection to hive ",e);
         }
     }
 
-    @Override
-    public void execute(Tuple tuple) {
+    public void updateState(List<TridentTuple> tuples, TridentCollector collector) {
         try {
+            Integer maxBatchSize = this.options.getBatchSize();
+            if (maxBatchSize > 0) {
+                int size = tuples.size();
+                int batchCount = size / maxBatchSize;
+                int count = 0;
+                for (int i = 0; i < batchCount; i++) {
+                    writeTuples(tuples.subList(i * maxBatchSize, (i + 1) * maxBatchSize));
+                    count++;
+                }
+                writeTuples(tuples.subList(count * maxBatchSize, size));
+            } else {
+                writeTuples(tuples);
+            }
+        } catch (Exception e) {
+            LOG.warn("hive streaming failed.",e);
+        } finally {
+            cleanup();
+        }
+    }
+
+    private void writeTuples(List<TridentTuple> tuples)
+        throws Exception {
+        for (TridentTuple tuple : tuples) {
             List<String> partitionVals = options.getMapper().mapPartitions(tuple);
             HiveEndPoint endPoint = options.makeEndPoint(partitionVals);
             HiveWriter writer = getOrCreateWriter(endPoint);
@@ -82,58 +113,8 @@ public class HiveBolt extends  BaseRichBolt {
                 enableHeartBeatOnAllWriters();
             }
             writer.write(options.getMapper().mapRecord(tuple));
-            currentBatchSize++;
-            if(currentBatchSize >= options.getBatchSize()) {
-                writer.flush(true);
-                currentBatchSize = 0;
-            }
-            collector.ack(tuple);
-        } catch(Exception e) {
-            collector.fail(tuple);
-            LOG.warn("hive streaming failed. ",e);
         }
     }
-
-    @Override
-    public void declareOutputFields(OutputFieldsDeclarer declarer) {
-
-    }
-
-    @Override
-    public void cleanup() {
-        for (Entry<HiveEndPoint, HiveWriter> entry : allWriters.entrySet()) {
-            try {
-                HiveWriter w = entry.getValue();
-                LOG.info("Flushing writer to {}", w);
-                w.flush(false);
-                LOG.info("Closing writer to {}", w);
-                w.close();
-            } catch (Exception ex) {
-                LOG.warn("Error while closing writer to " + entry.getKey() +
-                         ". Exception follows.", ex);
-                if (ex instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }
-
-        ExecutorService toShutdown[] = {callTimeoutPool};
-        for (ExecutorService execService : toShutdown) {
-            execService.shutdown();
-            try {
-                while (!execService.isTerminated()) {
-                    execService.awaitTermination(
-                                 options.getCallTimeOut(), TimeUnit.MILLISECONDS);
-                }
-            } catch (InterruptedException ex) {
-                LOG.warn("shutdown interrupted on " + execService, ex);
-            }
-        }
-        callTimeoutPool = null;
-        super.cleanup();
-        LOG.info("Hive Bolt stopped");
-    }
-
 
     private void setupHeartBeatTimer() {
         if(options.getHeartBeatInterval()>0) {
@@ -233,6 +214,38 @@ public class HiveBolt extends  BaseRichBolt {
             }
         }
         return count;
+    }
+
+    public void cleanup() {
+        for (Entry<HiveEndPoint, HiveWriter> entry : allWriters.entrySet()) {
+            try {
+                HiveWriter w = entry.getValue();
+                LOG.info("Flushing writer to {}", w);
+                w.flush(false);
+                LOG.info("Closing writer to {}", w);
+                w.close();
+            } catch (Exception ex) {
+                LOG.warn("Error while closing writer to " + entry.getKey() +
+                         ". Exception follows.", ex);
+                if (ex instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+
+        ExecutorService toShutdown[] = {callTimeoutPool};
+        for (ExecutorService execService : toShutdown) {
+            execService.shutdown();
+            try {
+                while (!execService.isTerminated()) {
+                    execService.awaitTermination(
+                                                 options.getCallTimeOut(), TimeUnit.MILLISECONDS);
+                }
+            } catch (InterruptedException ex) {
+                LOG.warn("shutdown interrupted on " + execService, ex);
+            }
+        }
+        callTimeoutPool = null;
     }
 
 }

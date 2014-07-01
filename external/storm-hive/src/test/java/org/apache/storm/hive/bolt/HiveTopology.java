@@ -29,6 +29,7 @@ import backtype.storm.tuple.Fields;
 import backtype.storm.tuple.Values;
 
 import org.apache.storm.hive.bolt.mapper.DelimitedRecordHiveMapper;
+import org.apache.storm.hive.common.HiveOptions;
 
 import java.util.Map;
 import java.util.UUID;
@@ -52,10 +53,11 @@ public class HiveTopology {
         DelimitedRecordHiveMapper mapper = new DelimitedRecordHiveMapper()
             .withColumnFields(new Fields(colNames))
             .withPartitionFields(new Fields(partNames));
-        HiveBolt hiveBolt = new HiveBolt(metaStoreURI,dbName,tblName,mapper)
-            .withTxnsPerBatch(10)
-            .withBatchSize(1000)
-            .withIdleTimeout(10);
+        HiveOptions hiveOptions = new HiveOptions(metaStoreURI,dbName,tblName,mapper)
+                .withTxnsPerBatch(10)
+                .withBatchSize(1000)
+                .withIdleTimeout(10);
+        HiveBolt hiveBolt = new HiveBolt(hiveOptions);
         TopologyBuilder builder = new TopologyBuilder();
         builder.setSpout(USER_SPOUT_ID, spout, 1);
         // SentenceSpout --> MyBolt
