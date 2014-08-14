@@ -51,22 +51,6 @@
      [~nimbus-sym (*STORM-CONF* NIMBUS-HOST) (*STORM-CONF* NIMBUS-THRIFT-PORT)]
      ~@body))
 
-(defn authorized-ui-user?
-  [user conf topology-conf]
-  (let [ui-users (concat (conf UI-USERS)
-                         (conf NIMBUS-ADMINS)
-                         (topology-conf UI-USERS)
-                         (topology-conf TOPOLOGY-USERS))]
-    (or (blank? (conf UI-FILTER))
-        (and (not (blank? user))
-          (some #(= % user) ui-users)))))
-
-(defn assert-authorized-ui-user
-  [user conf topology-conf]
-  (if (not (authorized-ui-user? user conf topology-conf))
-    ;;TODO need a better exception here so the UI can appear better
-    (throw (RuntimeException. (str "User " user " is not authorized.")))))
-
 (defn assert-authorized-user
   ([servlet-request op]
     (assert-authorized-user servlet-request op nil))

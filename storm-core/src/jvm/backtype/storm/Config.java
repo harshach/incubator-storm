@@ -510,15 +510,6 @@ public class Config extends HashMap<String, Object> {
     public static final Object UI_USERS_SCHEMA = ConfigValidation.StringsValidator;
 
     /**
-     * Whether or not actions should be enabled.  When disabled, requests to
-     * modify the state of topologies via HTTP will not be honored.
-     *
-     * Defaults to true.
-     */
-    public static final String UI_ACTIONS_ENABLED = "ui.actions.enabled";
-    public static final Object UI_ACTIONS_ENABLED_SCHEMA = Boolean.class;
-
-    /**
      * List of DRPC servers so that the DRPCSpout knows who to talk to.
      */
     public static final String DRPC_SERVERS = "drpc.servers";
