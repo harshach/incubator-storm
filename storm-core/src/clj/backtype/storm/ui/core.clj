@@ -16,7 +16,10 @@
 
 (ns backtype.storm.ui.core
   (:use compojure.core)
-  (:use ring.middleware.reload)
+  (:use [clojure.java.shell :only [sh]])
+  (:use ring.middleware.reload
+        ring.middleware.multipart-params)
+  (:use [ring.middleware.json :only [wrap-json-params]])
   (:use [hiccup core page-helpers])
   (:use [backtype.storm config util log])
   (:use [backtype.storm.ui helpers])
@@ -33,7 +36,8 @@
   (:import [backtype.storm.security.auth AuthUtils ReqContext])
   (:import [backtype.storm.generated AuthorizationException])
   (:import [backtype.storm.security.auth AuthUtils])
-  (:import [java.io File])
+  (:import [java.io File FilenameFilter])
+  (:require [clojure [string :as str]])
   (:require [compojure.route :as route]
             [compojure.handler :as handler]
             [ring.util.response :as resp]
@@ -490,6 +494,24 @@
               (hashmap-to-persistent bolts))
        spout-comp-summs bolt-comp-summs window id))))
 
+(defn run-tplg-submit-cmd [tplg-jar-file tplg-config]
+  (let [tplg-main-class (if (not-nil? tplg-config) (trim (tplg-config "topologyMainClass")))
+        tplg-main-class-args (if (not-nil? tplg-config) (str/join " " (tplg-config "topologyMainClassArgs")))
+        tplg-jvm-opts (if (not-nil? tplg-config) (str/join " " (tplg-config "topologyJvmOpts")))
+        storm-home (System/getProperty "storm.home")
+        storm-log-dir (if (not-nil? (*STORM-CONF* "storm.log.dir")) (*STORM-CONF* "storm.log.dir")
+                          (str storm-home file-path-separator "logs"))
+        storm-libs (str storm-home file-path-separator "lib" file-path-separator "*")
+        java-cmd (str (System/getProperty "java.home") file-path-separator "bin" file-path-separator "java")]
+    (sh java-cmd
+        (str "-Dstorm.home=" storm-home)
+        (str "-Dstorm.log.dir=" storm-log-dir)
+        (str "-Dstorm.jar=" tplg-jar-file)
+        "-cp"
+        (str  storm-libs ":" tplg-jar-file)
+        tplg-main-class
+        tplg-main-class-args)))
+
 (defn cluster-configuration []
   (with-nimbus nimbus
     (.getNimbusConf ^Nimbus$Client nimbus)))
@@ -937,7 +959,15 @@
         (.killTopologyWithOpts nimbus name options)
         (log-message "Killing topology '" name "' with wait time: " wait-time " secs")))
     (resp/redirect (str "/api/v1/topology/" (url-encode id))))
-
+  (POST "/api/v1/uploadTopology" [:as {:keys [cookies servlet-request]} id & params]
+        (let [tplg-file-data (params :filedata)
+              tplg-temp-file (tplg-file-data :tempfile)
+              tplg-file-name (tplg-file-data :filename)
+              tplg-jar-file (str/join [(.getParent tplg-temp-file) file-path-separator tplg-file-name])
+              tplg-config (if (not-nil? (params :topologyConfig)) (from-json (params :topologyConfig)))]
+          (.renameTo tplg-temp-file (File. tplg-jar-file))
+          (let [ret (run-tplg-submit-cmd tplg-jar-file tplg-config)]
+            (json-response ret (params "callback")))))
   (GET "/" [:as {cookies :cookies}]
        (resp/redirect "/index.html"))
   (route/resources "/")
@@ -966,9 +996,11 @@
 
 (def app
   (handler/site (-> main-routes
-                  (wrap-reload '[backtype.storm.ui.core])
-                  (wrap-anti-forgery {:error-response csrf-error-response})
-                  catch-errors)))
+                    (wrap-json-params)
+                    (wrap-multipart-params)
+                    (wrap-reload '[backtype.storm.ui.core])
+                    (wrap-anti-forgery {:error-response csrf-error-response})
+                    catch-errors)))
 
 (defn start-server!
   []
