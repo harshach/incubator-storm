@@ -292,7 +292,12 @@
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
         </dependency>
-                <dependency>
+        <!--
+            Haddop auth is required for UI filter in secure mode.
+            To make the deployment of storm in secure mode we are
+            providing this as dependency and part of storm-core.
+            -->
+        <dependency>
 	        <groupId>org.apache.hadoop</groupId>
 	        <artifactId>hadoop-auth</artifactId>
 	        <version>${hadoop.version}</version>
