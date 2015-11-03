@@ -292,6 +292,69 @@
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
         </dependency>
+                <dependency>
+	        <groupId>org.apache.hadoop</groupId>
+	        <artifactId>hadoop-auth</artifactId>
+	        <version>${hadoop.version}</version>
+          <exclusions>
+            <exclusion>
+              <groupId>junit</groupId>
+              <artifactId>junit</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.mockito</groupId>
+              <artifactId>mockito-all</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.mortbay.jetty</groupId>
+              <artifactId>jetty-util</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.mortbay.jetty</groupId>
+              <artifactId>jetty</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>javax.servlet</groupId>
+              <artifactId>servlet-api</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-api</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>commons-codec</groupId>
+              <artifactId>commons-codec</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>log4j</groupId>
+              <artifactId>log4j</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-log4j12</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.apache.hadoop</groupId>
+              <artifactId>hadoop-minikdc</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.apache.directory.server</groupId>
+              <artifactId>apacheds-kerberos-codec</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>log4j</groupId>
+              <artifactId>log4j</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.slf4j</groupId>
+              <artifactId>slf4j-log4j12</artifactId>
+            </exclusion>
+            <exclusion>
+              <groupId>org.apache.httpcomponents</groupId>
+              <artifactId>httpclient</artifactId>
+            </exclusion>
+          </exclusions>
+        </dependency>
     </dependencies>
     <build>
         <sourceDirectory>src/jvm</sourceDirectory>
@@ -609,7 +672,7 @@
                     <filters>
                         <!-- Several of these filters remove the .clj files from the shaded dependencies, even though only .clj files are in these jars.
                              The reason for this is a bit complex, but intentional.  During the build process all of the dependency .clj files are
-                             compiled down into .class files, and included in storm-core.jar.  The regular shade transformer handles these in 
+                             compiled down into .class files, and included in storm-core.jar.  The regular shade transformer handles these in
                              the majority of cases correctly.  However, the Clojure-Transformer does not shade everything correctly all the
                              time.  Instead of spending a lot of time to get the Clojure-Transformer to parse Clojure correctly we opted to remove
                              the .clj files from the uber jar. -->
